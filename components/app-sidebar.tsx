@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -13,15 +13,17 @@ import {
   Target,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   User,
   Bell,
   Moon,
-  Sun
+  Sun,
+  LogIn,
+  X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Logo, LogoMini } from "@/components/icons/logo"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -36,76 +38,122 @@ const bottomNav = [
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
-export default function AppSidebar() {
+interface AppSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
+
+export default function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [isDark, setIsDark] = useState(false)
+
+  // Close sidebar when route changes on mobile
+  useEffect(() => {
+    if (onClose) {
+      onClose()
+    }
+  }, [pathname])
 
   const toggleTheme = () => {
     setIsDark(!isDark)
     document.documentElement.classList.toggle("dark")
   }
 
+  const handleNavClick = () => {
+    // Close mobile sidebar on navigation
+    if (onClose && window.innerWidth < 1024) {
+      onClose()
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={0}>
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
       <aside
         className={`
-          fixed left-0 top-0 z-40 h-screen
+          fixed left-0 top-0 z-50 h-screen
           flex flex-col
           bg-gradient-to-b from-card via-card to-card/95
           border-r border-border/40
           shadow-xl shadow-black/5
           transition-all duration-300 ease-out
-          ${collapsed ? "w-20" : "w-72"}
+          ${collapsed ? "lg:w-20" : "lg:w-72"}
+          w-72
+          ${isOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:translate-x-0
         `}
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between p-5 border-b border-border/30">
-          <div className={`flex items-center gap-3 ${collapsed ? "justify-center w-full" : ""}`}>
+          <Link 
+            href="/" 
+            className={`flex items-center gap-3 ${collapsed ? "lg:justify-center lg:w-full" : ""}`}
+            onClick={handleNavClick}
+          >
             <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-primary to-purple-600 flex items-center justify-center shadow-lg shadow-primary/30">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-card" />
+              {collapsed ? (
+                <>
+                  <Logo size={44} className="lg:hidden" />
+                  <LogoMini size={40} className="hidden lg:block" />
+                </>
+              ) : (
+                <Logo size={44} />
+              )}
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-card animate-pulse" />
             </div>
             {!collapsed && (
               <div className="overflow-hidden">
-                <h1 className="font-bold text-xl bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                <h1 className="font-bold text-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
                   Hina
                 </h1>
-                <p className="text-xs text-muted-foreground">Productivity AI</p>
+                <p className="text-xs text-muted-foreground">Plan • Learn • Grow</p>
               </div>
             )}
-          </div>
+          </Link>
+          
+          {/* Mobile Close Button */}
+          <button 
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-muted lg:hidden"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* User Profile Card */}
-        <div className={`p-4 ${collapsed ? "px-2" : ""}`}>
+        <div className={`p-4 ${collapsed ? "lg:px-2" : ""}`}>
           <div
             className={`
               flex items-center gap-3 p-3 rounded-xl
               bg-gradient-to-r from-primary/10 to-purple-500/10
               border border-primary/20
-              ${collapsed ? "justify-center" : ""}
+              ${collapsed ? "lg:justify-center" : ""}
             `}
           >
             <Avatar className="h-10 w-10 ring-2 ring-primary/30 ring-offset-2 ring-offset-card">
               <AvatarImage src="/placeholder-user.jpg" />
               <AvatarFallback className="bg-primary text-primary-foreground font-semibold">JD</AvatarFallback>
             </Avatar>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">John Doe</p>
-                <p className="text-xs text-muted-foreground">12 day streak 🔥</p>
-              </div>
-            )}
+            <div className={`flex-1 min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
+              <p className="font-semibold text-sm truncate">John Doe</p>
+              <p className="text-xs text-muted-foreground">12 day streak 🔥</p>
+            </div>
           </div>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          <div className={`text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 ${collapsed ? "text-center" : "px-3"}`}>
-            {collapsed ? "•" : "Menu"}
+          <div className={`text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 ${collapsed ? "lg:text-center" : "px-3"}`}>
+            <span className={collapsed ? "lg:hidden" : ""}>Menu</span>
+            <span className={`hidden ${collapsed ? "lg:inline" : ""}`}>•</span>
           </div>
           
           {navigation.map((item) => {
@@ -115,10 +163,11 @@ export default function AppSidebar() {
             const linkContent = (
               <Link
                 href={item.href}
+                onClick={handleNavClick}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-xl
                   transition-all duration-200 group
-                  ${collapsed ? "justify-center" : ""}
+                  ${collapsed ? "lg:justify-center" : ""}
                   ${isActive 
                     ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
                     : "hover:bg-muted/80 text-muted-foreground hover:text-foreground"
@@ -126,9 +175,7 @@ export default function AppSidebar() {
                 `}
               >
                 <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "" : "group-hover:scale-110"} transition-transform`} />
-                {!collapsed && (
-                  <span className="font-medium text-sm">{item.name}</span>
-                )}
+                <span className={`font-medium text-sm ${collapsed ? "lg:hidden" : ""}`}>{item.name}</span>
                 {!collapsed && isActive && (
                   <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white/80" />
                 )}
@@ -141,7 +188,7 @@ export default function AppSidebar() {
                   <TooltipTrigger asChild>
                     {linkContent}
                   </TooltipTrigger>
-                  <TooltipContent side="right" className="font-medium">
+                  <TooltipContent side="right" className="font-medium hidden lg:block">
                     {item.name}
                   </TooltipContent>
                 </Tooltip>
@@ -155,7 +202,7 @@ export default function AppSidebar() {
         {/* Bottom Section */}
         <div className="p-3 border-t border-border/30 space-y-2">
           {/* Quick Actions */}
-          <div className={`flex ${collapsed ? "flex-col" : ""} gap-2 mb-3`}>
+          <div className={`flex ${collapsed ? "lg:flex-col" : ""} gap-2 mb-3`}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -194,10 +241,11 @@ export default function AppSidebar() {
                 <TooltipTrigger asChild>
                   <Link
                     href={item.href}
+                    onClick={handleNavClick}
                     className={`
                       flex items-center gap-3 px-3 py-2.5 rounded-xl
                       transition-all duration-200
-                      ${collapsed ? "justify-center" : ""}
+                      ${collapsed ? "lg:justify-center" : ""}
                       ${isActive 
                         ? "bg-muted text-foreground" 
                         : "hover:bg-muted/80 text-muted-foreground hover:text-foreground"
@@ -205,11 +253,11 @@ export default function AppSidebar() {
                     `}
                   >
                     <Icon className="w-5 h-5 flex-shrink-0" />
-                    {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
+                    <span className={`font-medium text-sm ${collapsed ? "lg:hidden" : ""}`}>{item.name}</span>
                   </Link>
                 </TooltipTrigger>
                 {collapsed && (
-                  <TooltipContent side="right" className="font-medium">
+                  <TooltipContent side="right" className="font-medium hidden lg:block">
                     {item.name}
                   </TooltipContent>
                 )}
@@ -217,11 +265,11 @@ export default function AppSidebar() {
             )
           })}
 
-          {/* Collapse Toggle */}
+          {/* Collapse Toggle - Desktop Only */}
           <Button
             variant="ghost"
             onClick={() => setCollapsed(!collapsed)}
-            className={`w-full h-9 rounded-lg hover:bg-muted justify-center ${collapsed ? "" : "justify-start"}`}
+            className={`w-full h-9 rounded-lg hover:bg-muted justify-center hidden lg:flex ${collapsed ? "" : "lg:justify-start"}`}
           >
             {collapsed ? (
               <ChevronRight className="w-4 h-4" />
