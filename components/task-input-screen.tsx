@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,22 +27,18 @@ import {
   User,
   Plus,
   ArrowRight,
-  Wand2
+  Wand2,
+  Loader2
 } from "lucide-react"
+import { createTaskAction } from "@/lib/actions/tasks"
+import { toast } from "sonner"
 
 interface TaskInputScreenProps {
   onClose: () => void
-  onSubmit?: (task: TaskInput) => void
+  onSubmit?: () => void
 }
 
-interface TaskInput {
-  title: string
-  description?: string
-  category: "Learning" | "Work" | "Health" | "Personal"
-  scheduledTime: string
-  duration: number
-  date: string
-}
+type TaskCategory = "Learning" | "Work" | "Health" | "Personal"
 
 const categoryConfig = {
   Learning: { icon: BookOpen, color: "bg-blue-500", textColor: "text-blue-600", bgColor: "bg-blue-500/10" },
@@ -62,26 +58,48 @@ export default function TaskInputScreen({ onClose, onSubmit }: TaskInputScreenPr
   const [inputMode, setInputMode] = useState<"text" | "voice" | "image">("text")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [category, setCategory] = useState<"Learning" | "Work" | "Health" | "Personal">("Work")
+  const [category, setCategory] = useState<TaskCategory>("Work")
   const [scheduledTime, setScheduledTime] = useState("09:00")
   const [duration, setDuration] = useState(30)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
-  const handleSubmit = () => {
-    if (!title.trim()) return
-    
-    const task: TaskInput = {
-      title: title.trim(),
-      description: description.trim() || undefined,
-      category,
-      scheduledTime,
-      duration,
-      date
+  const handleSubmit = async () => {
+    if (!title.trim()) {
+      toast.error('Please enter a task title')
+      return
     }
     
-    onSubmit?.(task)
-    onClose()
+    startTransition(async () => {
+      try {
+        // Combine date and time for due_at
+        const dueAt = `${date}T${scheduledTime}:00.000Z`
+        
+        const { data, error } = await createTaskAction({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          priority: 'medium',
+          due_at: dueAt,
+          start_at: dueAt,
+          estimate_minutes: duration,
+          labels: [category],
+          sync_to_calendar: true,
+        })
+
+        if (error) {
+          toast.error('Failed to create task: ' + error.message)
+          return
+        }
+
+        toast.success('Task created successfully!')
+        onSubmit?.()
+        onClose()
+      } catch (err) {
+        toast.error('Failed to create task')
+        console.error(err)
+      }
+    })
   }
 
   const handleQuickAdd = (suggestion: typeof quickSuggestions[0]) => {
@@ -304,11 +322,20 @@ export default function TaskInputScreen({ onClose, onSubmit }: TaskInputScreenPr
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!title.trim()}
+            disabled={!title.trim() || isPending}
             className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
           >
-            Add Task
-            <ArrowRight className="w-4 h-4 ml-2" />
+            {isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                Add Task
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
           </Button>
         </div>
       </CardContent>

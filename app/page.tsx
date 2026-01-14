@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -50,14 +50,13 @@ import AppSidebar from "@/components/app-sidebar"
 import DashboardTimeline from "@/components/dashboard-timeline"
 import TaskInputScreen from "@/components/task-input-screen"
 import CelebrationCard from "@/components/celebration-card"
+import { getTasksAction } from "@/lib/actions/tasks"
 import {
-  sampleTasks,
   weeklyAnalytics,
   categoryStats,
   aiInsights,
   timeDistribution,
   hourlyProductivity,
-  categoryColors
 } from "@/lib/data"
 
 const CATEGORY_COLORS = {
@@ -92,6 +91,29 @@ export default function Dashboard() {
   const [selectedTimeframe, setSelectedTimeframe] = useState("week")
   const [isMounted, setIsMounted] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [tasks, setTasks] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch tasks
+  const fetchTasks = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      
+      const { data, error } = await getTasksAction({
+        due_after: today.toISOString(),
+      })
+      
+      if (!error && data) {
+        setTasks(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch tasks:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
   // Fix hydration: Only render time after mount
   useEffect(() => {
@@ -101,20 +123,29 @@ export default function Dashboard() {
     return () => clearInterval(timer)
   }, [])
 
+  // Fetch tasks on mount
+  useEffect(() => {
+    fetchTasks()
+  }, [fetchTasks])
+
   const handleTaskComplete = () => {
     setShowCelebration(true)
     setTimeout(() => setShowCelebration(false), 2500)
+    fetchTasks() // Refresh tasks after completion
   }
 
-  // Calculate stats
-  const totalPlanned = sampleTasks.length
-  const completed = sampleTasks.filter(t => t.completionStatus === "completed").length
-  const partial = sampleTasks.filter(t => t.completionStatus === "partial").length
-  const pending = sampleTasks.filter(t => t.completionStatus === "pending").length
-  const adherenceRate = Math.round(((completed + partial * 0.5) / totalPlanned) * 100)
+  const handleTaskCreated = () => {
+    fetchTasks() // Refresh tasks after creation
+  }
 
-  const totalMinutesPlanned = sampleTasks.reduce((acc, t) => acc + t.duration, 0)
-  const totalMinutesExecuted = sampleTasks.reduce((acc, t) => acc + (t.actualDuration || 0), 0)
+  // Calculate stats from real tasks
+  const totalPlanned = tasks.length
+  const completed = tasks.filter(t => t.status === "completed").length
+  const pending = tasks.filter(t => t.status === "pending" || t.status === "in_progress").length
+  const adherenceRate = totalPlanned > 0 ? Math.round((completed / totalPlanned) * 100) : 0
+
+  const totalMinutesPlanned = tasks.reduce((acc, t) => acc + (t.estimate_minutes || 0), 0)
+  const totalMinutesExecuted = tasks.reduce((acc, t) => acc + (t.actual_minutes || 0), 0)
 
   // Greeting based on time (safe for SSR)
   const hour = currentTime?.getHours() ?? 12
@@ -199,7 +230,10 @@ export default function Dashboard() {
           {/* Task Input Modal */}
           {showTaskInput && (
             <div className="mb-6 lg:mb-8 animate-in fade-in slide-in-from-top-4 duration-300">
-              <TaskInputScreen onClose={() => setShowTaskInput(false)} />
+              <TaskInputScreen 
+                onClose={() => setShowTaskInput(false)}
+                onSubmit={handleTaskCreated}
+              />
             </div>
           )}
 
@@ -241,16 +275,19 @@ export default function Dashboard() {
                   <p className="text-2xl lg:text-3xl font-bold">{completed}<span className="text-base lg:text-lg text-muted-foreground">/{totalPlanned}</span></p>
                 </div>
                 <div className="flex gap-0.5 lg:gap-1 mt-2 lg:mt-3">
-                  {sampleTasks.slice(0, 6).map((task, i) => (
+                  {tasks.slice(0, 6).map((task, i) => (
                     <div
                       key={i}
                       className={`h-1.5 lg:h-2 flex-1 rounded-full ${
-                        task.completionStatus === 'completed' ? 'bg-green-500' :
-                        task.completionStatus === 'partial' ? 'bg-yellow-500' :
-                        task.completionStatus === 'pending' ? 'bg-muted' : 'bg-red-500'
+                        task.status === 'completed' ? 'bg-green-500' :
+                        task.status === 'in_progress' ? 'bg-yellow-500' :
+                        task.status === 'pending' ? 'bg-muted' : 'bg-red-500'
                       }`}
                     />
                   ))}
+                  {tasks.length === 0 && (
+                    <div className="h-1.5 lg:h-2 flex-1 rounded-full bg-muted" />
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -312,7 +349,11 @@ export default function Dashboard() {
                   </Button>
                 </CardHeader>
                 <CardContent className="px-4 lg:px-6">
-                  <DashboardTimeline onTaskComplete={handleTaskComplete} />
+                  <DashboardTimeline 
+                    tasks={tasks}
+                    onTaskComplete={handleTaskComplete}
+                    onTasksChange={fetchTasks}
+                  />
                 </CardContent>
               </Card>
             </div>

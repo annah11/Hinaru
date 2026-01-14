@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,22 +35,25 @@ import {
   Heart,
   User
 } from "lucide-react"
+import { completeTaskAction, deleteTaskAction } from "@/lib/actions/tasks"
+import { toast } from "sonner"
 
 export interface Task {
   id: string
   title: string
-  time: string
-  duration: string
-  category: "learning" | "work" | "health" | "personal"
-  completed: boolean
-  completionLevel?: "completed" | "partial" | "missed" | "unknown"
-  completionConfidence?: number
-  calendarAttended?: boolean
-  notes?: string
+  description?: string
+  status: string
+  due_at?: string
+  start_at?: string
+  estimate_minutes?: number
+  actual_minutes?: number
+  labels?: Array<{ name: string; color: string }>
 }
 
 interface DashboardTimelineProps {
-  onTaskComplete?: (task: Task) => void
+  tasks?: Task[]
+  onTaskComplete?: () => void
+  onTasksChange?: () => void
 }
 
 const categoryConfig = {
@@ -115,108 +118,49 @@ const completionLevelConfig = {
   }
 }
 
-const initialTasks: Task[] = [
-  { 
-    id: "1", 
-    title: "Morning Learning Session - TypeScript Generics", 
-    time: "08:00", 
-    duration: "1h", 
-    category: "learning", 
-    completed: true,
-    completionLevel: "completed",
-    completionConfidence: 95,
-    calendarAttended: true
-  },
-  { 
-    id: "2", 
-    title: "Team Standup & Sprint Planning", 
-    time: "09:30", 
-    duration: "30min", 
-    category: "work", 
-    completed: true,
-    completionLevel: "completed",
-    completionConfidence: 100,
-    calendarAttended: true
-  },
-  { 
-    id: "3", 
-    title: "Deep Work: Feature Development", 
-    time: "10:00", 
-    duration: "2h", 
-    category: "work", 
-    completed: true,
-    completionLevel: "partial",
-    completionConfidence: 75,
-    notes: "Completed 60% of planned work"
-  },
-  { 
-    id: "4", 
-    title: "Lunch Break & Short Walk", 
-    time: "12:00", 
-    duration: "45min", 
-    category: "health", 
-    completed: true,
-    completionLevel: "completed",
-    completionConfidence: 90
-  },
-  { 
-    id: "5", 
-    title: "Code Review & Documentation", 
-    time: "13:00", 
-    duration: "1h 30min", 
-    category: "work", 
-    completed: false,
-    completionLevel: "unknown",
-    completionConfidence: 50
-  },
-  { 
-    id: "6", 
-    title: "Evening Learning - React Patterns", 
-    time: "18:00", 
-    duration: "1h", 
-    category: "learning", 
-    completed: false,
-    completionLevel: "unknown"
-  },
-  { 
-    id: "7", 
-    title: "Gym - Strength Training", 
-    time: "19:30", 
-    duration: "1h", 
-    category: "health", 
-    completed: false,
-    completionLevel: "unknown"
-  },
-  { 
-    id: "8", 
-    title: "Family Time & Dinner", 
-    time: "20:30", 
-    duration: "1h 30min", 
-    category: "personal", 
-    completed: false
-  }
-]
+export default function DashboardTimeline({ tasks = [], onTaskComplete, onTasksChange }: DashboardTimelineProps) {
+  const [isPending, startTransition] = useTransition()
 
-export default function DashboardTimeline({ onTaskComplete }: DashboardTimelineProps) {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks)
-  const [draggedTask, setDraggedTask] = useState<string | null>(null)
+  const handleTaskComplete = async (taskId: string) => {
+    startTransition(async () => {
+      try {
+        const task = tasks.find(t => t.id === taskId)
+        const actualMinutes = task?.estimate_minutes || undefined
+        
+        const { error } = await completeTaskAction(taskId, actualMinutes)
+        
+        if (error) {
+          toast.error('Failed to complete task')
+          return
+        }
 
-  const handleTaskComplete = (taskId: string, level: "completed" | "partial" | "missed") => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        const updatedTask = { 
-          ...task, 
-          completed: level === "completed" || level === "partial",
-          completionLevel: level,
-          completionConfidence: level === "completed" ? 100 : level === "partial" ? 60 : 0
-        }
-        if (onTaskComplete && (level === "completed" || level === "partial")) {
-          onTaskComplete(updatedTask)
-        }
-        return updatedTask
+        toast.success('Task completed!')
+        onTaskComplete?.()
+        onTasksChange?.()
+      } catch (err) {
+        toast.error('Failed to complete task')
+        console.error(err)
       }
-      return task
-    }))
+    })
+  }
+
+  const handleTaskDelete = async (taskId: string) => {
+    startTransition(async () => {
+      try {
+        const { error } = await deleteTaskAction(taskId)
+        
+        if (error) {
+          toast.error('Failed to delete task')
+          return
+        }
+
+        toast.success('Task deleted')
+        onTasksChange?.()
+      } catch (err) {
+        toast.error('Failed to delete task')
+        console.error(err)
+      }
+    })
   }
 
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
@@ -244,10 +188,40 @@ export default function DashboardTimeline({ onTaskComplete }: DashboardTimelineP
     setDraggedTask(null)
   }
 
-  const completedCount = tasks.filter(t => t.completionLevel === "completed").length
-  const partialCount = tasks.filter(t => t.completionLevel === "partial").length
+  const completedCount = tasks.filter(t => t.status === "completed").length
+  const inProgressCount = tasks.filter(t => t.status === "in_progress").length
   const totalTasks = tasks.length
-  const progressPercentage = ((completedCount + partialCount * 0.5) / totalTasks) * 100
+  const progressPercentage = totalTasks > 0 ? ((completedCount + inProgressCount * 0.5) / totalTasks) * 100 : 0
+
+  // Helper to get category from labels
+  const getCategory = (task: Task): keyof typeof categoryConfig => {
+    if (!task.labels || task.labels.length === 0) return "work"
+    const categoryName = task.labels[0].name.toLowerCase()
+    if (categoryName in categoryConfig) return categoryName as keyof typeof categoryConfig
+    return "work"
+  }
+
+  // Helper to format time
+  const formatTime = (dateString?: string) => {
+    if (!dateString) return "Not scheduled"
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+    } catch {
+      return "Invalid time"
+    }
+  }
+
+  // Helper to format duration
+  const formatDuration = (minutes?: number) => {
+    if (!minutes) return "No duration"
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    if (hours > 0) {
+      return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`
+    }
+    return `${mins}min`
+  }
 
   return (
     <Card className="border-0 shadow-lg">
@@ -256,7 +230,7 @@ export default function DashboardTimeline({ onTaskComplete }: DashboardTimelineP
           <div>
             <CardTitle className="text-lg font-semibold">Today's Timeline</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              {completedCount} completed • {partialCount} partial • {totalTasks - completedCount - partialCount} remaining
+              {completedCount} completed • {inProgressCount} in progress • {totalTasks - completedCount - inProgressCount} pending
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -283,164 +257,108 @@ export default function DashboardTimeline({ onTaskComplete }: DashboardTimelineP
       </CardHeader>
 
       <CardContent className="space-y-2">
-        <TooltipProvider>
-          {tasks.map((task, index) => {
-            const config = categoryConfig[task.category]
-            const CategoryIcon = config.icon
-            const completionConfig = task.completionLevel ? completionLevelConfig[task.completionLevel] : null
-            const CompletionIcon = completionConfig?.icon || Circle
+        {tasks.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p className="text-sm">No tasks scheduled for today</p>
+            <p className="text-xs mt-1">Create a task to get started!</p>
+          </div>
+        ) : (
+          <TooltipProvider>
+            {tasks.map((task) => {
+              const category = getCategory(task)
+              const config = categoryConfig[category]
+              const CategoryIcon = config.icon
+              const isCompleted = task.status === "completed"
+              const CompletionIcon = isCompleted ? CheckCircle : Circle
 
-            return (
-              <div
-                key={task.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, task.id)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, task.id)}
-                className={`
-                  group relative p-3 rounded-xl border-l-4 transition-all duration-200
-                  ${config.borderColor} ${config.bgColor}
-                  ${draggedTask === task.id ? "opacity-50 scale-95" : ""}
-                  ${task.completionLevel === "completed" ? "opacity-75" : ""}
-                  hover:shadow-md cursor-grab active:cursor-grabbing
-                `}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Drag handle */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
-                    <GripVertical className="w-4 h-4 text-muted-foreground" />
-                  </div>
-
-                  {/* Completion status with inference */}
-                  <div className="pt-0.5">
-                    {task.completionLevel ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button 
-                            onClick={() => {
-                              const levels: ("completed" | "partial" | "missed")[] = ["completed", "partial", "missed"]
-                              const currentIndex = levels.indexOf(task.completionLevel as any)
-                              const nextLevel = levels[(currentIndex + 1) % levels.length]
-                              handleTaskComplete(task.id, nextLevel)
-                            }}
-                            className="focus:outline-none"
-                          >
-                            <CompletionIcon className={`w-5 h-5 ${completionConfig?.color} transition-colors`} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-xs">
-                          <div className="space-y-1">
-                            <p className="font-medium">{completionConfig?.label}</p>
-                            <p className="text-xs text-muted-foreground">{completionConfig?.description}</p>
-                            {task.completionConfidence && (
-                              <p className="text-xs">
-                                Confidence: <span className="font-medium">{task.completionConfidence}%</span>
-                              </p>
-                            )}
-                            {task.calendarAttended && (
-                              <p className="text-xs flex items-center gap-1">
-                                <CalendarCheck className="w-3 h-3 text-green-500" />
-                                Calendar attendance confirmed
-                              </p>
-                            )}
-                            {task.notes && (
-                              <p className="text-xs text-muted-foreground italic">{task.notes}</p>
-                            )}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
+              return (
+                <div
+                  key={task.id}
+                  className={`
+                    group relative p-3 rounded-xl border-l-4 transition-all duration-200
+                    ${config.borderColor} ${config.bgColor}
+                    ${isCompleted ? "opacity-75" : ""}
+                    hover:shadow-md
+                  `}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Completion status */}
+                    <div className="pt-0.5">
                       <button
-                        onClick={() => handleTaskComplete(task.id, "completed")}
-                        className="focus:outline-none"
+                        onClick={() => !isCompleted && handleTaskComplete(task.id)}
+                        disabled={isCompleted || isPending}
+                        className="focus:outline-none disabled:opacity-50"
                       >
-                        <Circle className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
+                        <CompletionIcon 
+                          className={`w-5 h-5 transition-colors ${
+                            isCompleted ? "text-green-500" : "text-muted-foreground hover:text-primary"
+                          }`} 
+                        />
                       </button>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Task content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className={`font-medium text-sm ${task.completionLevel === "completed" ? "line-through text-muted-foreground" : ""}`}>
-                          {task.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">{task.time}</span>
-                          <span className="text-xs text-muted-foreground">•</span>
-                          <span className="text-xs text-muted-foreground">{task.duration}</span>
-                          
-                          {/* AI inference indicator */}
-                          {task.completionConfidence !== undefined && task.completionConfidence < 100 && !task.calendarAttended && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="flex items-center gap-1 text-xs text-primary">
-                                  <Sparkles className="w-3 h-3" />
-                                  AI inferred
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Completion status inferred by AI based on patterns</p>
-                              </TooltipContent>
-                            </Tooltip>
+                    {/* Task content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className={`font-medium text-sm ${isCompleted ? "line-through text-muted-foreground" : ""}`}>
+                            {task.title}
+                          </p>
+                          {task.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>
                           )}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-muted-foreground">{formatTime(task.due_at)}</span>
+                            <span className="text-xs text-muted-foreground">•</span>
+                            <span className="text-xs text-muted-foreground">{formatDuration(task.estimate_minutes)}</span>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-1">
-                        <Badge variant="secondary" className={`${config.bgColor} ${config.textColor} border-0 text-[10px] px-2`}>
-                          <CategoryIcon className="w-3 h-3 mr-1" />
-                          {task.category}
-                        </Badge>
-                        
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => handleTaskComplete(task.id, "completed")}>
-                              <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
-                              Mark Complete
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleTaskComplete(task.id, "partial")}>
-                              <AlertCircle className="w-4 h-4 mr-2 text-yellow-500" />
-                              Mark Partial
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleTaskComplete(task.id, "missed")}>
-                              <Circle className="w-4 h-4 mr-2 text-red-500" />
-                              Mark Missed
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Edit2 className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Copy className="w-4 h-4 mr-2" />
-                              Duplicate
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive">
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="secondary" className={`${config.bgColor} ${config.textColor} border-0 text-[10px] px-2`}>
+                            <CategoryIcon className="w-3 h-3 mr-1" />
+                            {category}
+                          </Badge>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              {!isCompleted && (
+                                <DropdownMenuItem onClick={() => handleTaskComplete(task.id)}>
+                                  <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                                  Mark Complete
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem>
+                                <Edit2 className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleTaskDelete(task.id)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-        </TooltipProvider>
-
-        {/* Quick add button */}
-        <Button variant="ghost" className="w-full mt-3 border-2 border-dashed border-muted-foreground/20 hover:border-primary/40 hover:bg-primary/5 text-muted-foreground">
-          <span className="text-lg mr-2">+</span>
-          Add another task
-        </Button>
+              )
+            })}
+          </TooltipProvider>
+        )}
       </CardContent>
     </Card>
   )
